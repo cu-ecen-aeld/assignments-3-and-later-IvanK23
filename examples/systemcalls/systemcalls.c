@@ -1,4 +1,12 @@
 #include "systemcalls.h"
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <stdlib.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -17,7 +25,29 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+  
+    int returnStatusCode = system(cmd);
+    bool returnValue,
+         exStatus = (WEXITSTATUS(returnStatusCode) == 0 ),
+         normalCommandExit = WIFEXITED(returnStatusCode);
+
+    if(returnStatusCode == -1 ){
+    
+      returnValue = false;
+    
+    }else {
+      
+      if( normalCommandExit && exStatus) {
+      
+        returnValue = true;
+      
+      }else {
+        returnValue = false;
+      }
+    }
+
+    return returnValue;
+  
 }
 
 /**
@@ -47,7 +77,7 @@ bool do_exec(int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    // command[count] = command[count];
 
 /*
  * TODO:
@@ -58,6 +88,39 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+
+        
+// This function was partially generated using ChatGPT at https://chat.openai.com/ with prompts including 
+// "What other exceptions and error handling can I add".
+    int status;
+    pid_t pid = fork();
+    if(pid == -1){
+      perror("fork");
+      printf("ERROR: Cannot create the child process.");
+      return false;
+    } else if(pid == 0) {
+    
+      execv(command[0], command);
+      
+      perror("execv"); 
+      exit(EXIT_FAILURE); 
+    
+    } else {
+      if(waitpid(pid, &status, 0) == -1 ){
+        perror("waitpid");
+        va_end(args);
+        return false;
+      } else if( WIFEXITED(status)){
+        printf("Child process exited with status%d\n",WEXITSTATUS(status));
+        va_end(args);
+        return (WEXITSTATUS(status) == 0 );
+      } else {
+            printf("Something going wrong ... ");
+            va_end(args);
+            return false;
+      }
+    }
+
 
     va_end(args);
 
@@ -92,6 +155,47 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+
+    
+
+    int fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+    
+    if(fd < 0) { 
+      perror("open");
+      return false;
+    }
+  
+    int status;
+    pid_t pid = fork();
+    if(pid == -1 ){
+      close(fd);
+      perror("fork");
+      printf("ERROR: Cannot create the child process.");
+      return false;
+    } else if(pid == 0){
+      if(dup2(fd, 1) < 0){
+        perror("dup2");
+        exit(EXIT_FAILURE);
+      }
+      close(fd);
+
+      execv(command[0], command);
+      perror("execv");
+      exit(EXIT_FAILURE);
+    } else {
+      close(fd);
+      if(waitpid(pid, &status, 0) == -1 ){
+      perror("waitpid");
+      return false;
+      } else if( WIFEXITED(status)){
+        printf("Child process exited with status%d\n",WEXITSTATUS(status));
+        return (WEXITSTATUS(status) == 0);
+      } else {
+         printf("Something going wrong ... ");
+         return false;
+      }
+    }
+
 
     va_end(args);
 
