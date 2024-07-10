@@ -107,7 +107,7 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 
-SYSROOT="/home/e4rror04/toolchain/install-lnx/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc"
+SYSROOT="${CROSS_COMPILE}gcc --print-sysroot"
 
 LIBS=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library" | awk '{print $5}' | sort | tr -d '[] ')
 
