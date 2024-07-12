@@ -7,7 +7,7 @@ set -u
 
 OUTDIR=/tmp/aeld
 KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
-KERNEL_VERSION=v6.1.14
+KERNEL_VERSION=v6.9.8
 BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
@@ -98,44 +98,52 @@ fi
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 make CONFIG_PREFIX="$OUTDIR/rootfs" ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
-
-cd "${OUTDIR}/rootfs"
-
+echo "$OUTDIR/rootfs"
+cd "$OUTDIR/rootfs"
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 
-SYSROOT="${CROSS_COMPILE}gcc --print-sysroot"
 
-LIBS=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library" | awk '{print $5}' | sort | tr -d '[] ')
+SYSROOT="$(${CROSS_COMPILE}gcc --print-sysroot)"
 
-for LIB in $LIBS 
-do
-  LIB_PATH=$(find "$SYSROOT" -name "$LIB")
+cp ${SYSROOT}/lib/ld-linux-aarch64.so.* ${OUTDIR}/rootfs/lib
+cp ${SYSROOT}/lib64/libm.so.* ${OUTDIR}/rootfs/lib64
+cp ${SYSROOT}/lib64/libresolv.so.* ${OUTDIR}/rootfs/lib64
+cp ${SYSROOT}/lib64/libc.so.* ${OUTDIR}/rootfs/lib64
+
+#LIBS=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library" | awk '{print $5}' | sort | tr -d '[] ')
+
+#for LIB in $LIBS 
+#do
+ # LIB_PATH=$(find "$SYSROOT" -name "$LIB")
   #echo "LIB_PATH: ${LIB_PATH}"
 
-  if [ -n "$LIB_PATH" ]
-  then
+  #if [ -n "$LIB_PATH" ]
+  #then
     #echo "Copying $LIB_PATH to ${OUTDIR}/rootfs/lib64"
-    cp "$LIB_PATH" "${OUTDIR}/rootfs/lib64/"
-  else
-    echo "Library $LIB not found"
-  fi
-done
+   # cp "$LIB_PATH" "${OUTDIR}/rootfs/lib64/"
+  #else
+   # echo "Library $LIB not found"
+  #fi
+#done
 
-INTERPR=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "program interpreter" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '[] ')
-INTERPR=$(echo "$INTERPR" | sed 's|^/lib/||')
-INTER_PATH=$(find "$SYSROOT" -name "$INTERPR")
+#INTERPR=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "program interpreter" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '[] ')
+#INTERPR=$(echo "$INTERPR" | sed 's|^/lib/||')
+#INTER_PATH=$(find "$SYSROOT" -name "$INTERPR")
 
-if [ -n "$INTER_PATH" ]
-then
+#if [ -n "$INTER_PATH" ]
+#then
   #echo "Copying $INTER_PATH to ${OUTDIR}/rootfs/lib"
-  cp "$INTER_PATH" "${OUTDIR}/rootfs/lib/"
-else
-  echo "Interpreter $INTERPR not found"
-fi 
+ # cp "$INTER_PATH" "${OUTDIR}/rootfs/lib/"
+#else
+ # echo "Interpreter $INTERPR not found"
+#fi
+
+
+
 
 # TODO: Make device nodes
 
@@ -149,7 +157,7 @@ make clean
 echo "Building the writer utility"
 make CROSS_COMPILE=$CROSS_COMPILE
 
-cd "${OUTDIR}"
+cd ${OUTDIR}
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
@@ -157,21 +165,21 @@ cd "${OUTDIR}"
 MAIN_GIT=$(cd $(dirname $FINDER_APP_DIR) && pwd)
 
 echo "Copy the finder related scripts to the home directory"
-mv "$FINDER_APP_DIR"/writer "$OUTDIR/rootfs/home"
-cp "$FINDER_APP_DIR"/finder-test.sh "$OUTDIR/rootfs/home"
-cp "$FINDER_APP_DIR"/finder.sh "$OUTDIR/rootfs/home"
+mv $FINDER_APP_DIR/writer "$OUTDIR/rootfs/home"
+cp $FINDER_APP_DIR/finder-test.sh "$OUTDIR/rootfs/home"
+cp $FINDER_APP_DIR/finder.sh "$OUTDIR/rootfs/home"
 cp "$FINDER_APP_DIR/autorun-qemu.sh" "$OUTDIR/rootfs/home"
 cp "$MAIN_GIT/conf/username.txt" "$OUTDIR/rootfs/home"
 cp "$MAIN_GIT/conf/assignment.txt" "$OUTDIR/rootfs/home" 
 
 
 # TODO: Chown the root directory
-
-sudo chown -R root:root ${OUTDIR}/rootfs
+cd $OUTDIR/rootfs
+sudo chown -R root:root *
 
 # TODO: Create initramfs.cpio.gz
 echo "Creating intiframfs"
-cd "$OUTDIR/rootfs"
-find . | cpio -H newc -ov > "$OUTDIR/initramfs.cpio"
-gzip -f "${OUTDIR}/initramfs.cpio"
+find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
+cd ${OUTDIR}
+gzip -f initramfs.cpio
 echo "Pack"
