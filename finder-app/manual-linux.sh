@@ -98,7 +98,6 @@ fi
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 make CONFIG_PREFIX="$OUTDIR/rootfs" ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
-echo "$OUTDIR/rootfs"
 cd "$OUTDIR/rootfs"
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
@@ -109,38 +108,33 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 SYSROOT="$(${CROSS_COMPILE}gcc --print-sysroot)"
 
-cp ${SYSROOT}/lib/ld-linux-aarch64.so.* ${OUTDIR}/rootfs/lib
-cp ${SYSROOT}/lib64/libm.so.* ${OUTDIR}/rootfs/lib64
-cp ${SYSROOT}/lib64/libresolv.so.* ${OUTDIR}/rootfs/lib64
-cp ${SYSROOT}/lib64/libc.so.* ${OUTDIR}/rootfs/lib64
+LIBS=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library" | awk '{print $5}' | sort | tr -d '[] ')
 
-#LIBS=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library" | awk '{print $5}' | sort | tr -d '[] ')
+for LIB in $LIBS 
+do
+  LIB_PATH=$(find "$SYSROOT" -name "$LIB")
+  echo "LIB_PATH: ${LIB_PATH}"
 
-#for LIB in $LIBS 
-#do
- # LIB_PATH=$(find "$SYSROOT" -name "$LIB")
-  #echo "LIB_PATH: ${LIB_PATH}"
+  if [ -n "$LIB_PATH" ]
+  then
+    echo "Copying $LIB_PATH to ${OUTDIR}/rootfs/lib64"
+    cp "$LIB_PATH" "${OUTDIR}/rootfs/lib64/"
+  else
+    echo "Library $LIB not found"
+  fi
+done
 
-  #if [ -n "$LIB_PATH" ]
-  #then
-    #echo "Copying $LIB_PATH to ${OUTDIR}/rootfs/lib64"
-   # cp "$LIB_PATH" "${OUTDIR}/rootfs/lib64/"
-  #else
-   # echo "Library $LIB not found"
-  #fi
-#done
+INTERPR=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "program interpreter" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '[] ')
+INTERPR=$(echo "$INTERPR" | sed 's|^/lib/||')
+INTER_PATH=$(find "$SYSROOT" -name "$INTERPR")
 
-#INTERPR=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "program interpreter" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '[] ')
-#INTERPR=$(echo "$INTERPR" | sed 's|^/lib/||')
-#INTER_PATH=$(find "$SYSROOT" -name "$INTERPR")
-
-#if [ -n "$INTER_PATH" ]
-#then
-  #echo "Copying $INTER_PATH to ${OUTDIR}/rootfs/lib"
- # cp "$INTER_PATH" "${OUTDIR}/rootfs/lib/"
-#else
- # echo "Interpreter $INTERPR not found"
-#fi
+if [ -n "$INTER_PATH" ]
+then
+  echo "Copying $INTER_PATH to ${OUTDIR}/rootfs/lib"
+  cp "$INTER_PATH" "${OUTDIR}/rootfs/lib/"
+else
+  echo "Interpreter $INTERPR not found"
+fi
 
 
 
