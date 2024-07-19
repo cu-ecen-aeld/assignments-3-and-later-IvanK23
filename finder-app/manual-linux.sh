@@ -7,7 +7,7 @@ set -u
 
 OUTDIR=/tmp/aeld
 KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
-KERNEL_VERSION=v6.9.8
+KERNEL_VERSION=v6.8.12
 BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
@@ -18,7 +18,7 @@ then
 	echo "Using default directory ${OUTDIR} for output"
 else
   # absolute path
-  OUTDIR=$1
+  OUTDIR=$(realpath $1)
 	echo "Using passed directory ${OUTDIR} for output"
 fi
 
@@ -43,7 +43,7 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
     
     echo "Configure the kernel"
-    make $(nproc)ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
     
     echo "Build a kernel image"
     make -j $(nproc) ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
@@ -57,10 +57,7 @@ echo "Adding the Image in outdir"
 
 cd "${OUTDIR}"
 echo "Copying the result files to the ${OUTDIR}"
-cp "${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image" "${OUTDIR}"
-#cp -a linux-stable/arch/${ARCH}/boot/dts "${OUTDIR}/"
-#cp -a linux-stable/arch/${ARCH}/boot/dtb "${OUTDIR}/"
-#cp -a linux-stable/.config "${OUTDIR}/"
+cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
 
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
@@ -74,9 +71,13 @@ fi
 mkdir -p "${OUTDIR}"/rootfs
 cd "${OUTDIR}"/rootfs
 
+# This function was partially generated using ChatGPT at https://chat.openai.com/ with prompts including 
+# "which directories should i include in the root filesystem".
+
 mkdir -p bin dev etc home lib lib64 proc sbin sys tmp usr var 
 mkdir -p usr/bin usr/lib usr/sbin
-mkdir -p var/log
+mkdir -p var/log var/run
+mkdir -p home/conf
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -96,9 +97,8 @@ fi
 # TODO: Make and install busybox
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
-make CONFIG_PREFIX="$OUTDIR/rootfs" ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
+make CONFIG_PREFIX=$OUTDIR/rootfs ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
-echo "$OUTDIR/rootfs"
 cd "$OUTDIR/rootfs"
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
@@ -106,44 +106,38 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 
+# This function was partially generated using ChatGPT at https://chat.openai.com/ with prompts including 
+# "how can i find out where is sysroot for compiler aarch64-none-linux-gnu-" and "how can i find files from the "${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter".
 
-SYSROOT="$(${CROSS_COMPILE}gcc --print-sysroot)"
+SYSROOT=$(${CROSS_COMPILE}gcc --print-sysroot)
 
-cp ${SYSROOT}/lib/ld-linux-aarch64.so.* ${OUTDIR}/rootfs/lib
-cp ${SYSROOT}/lib64/libm.so.* ${OUTDIR}/rootfs/lib64
-cp ${SYSROOT}/lib64/libresolv.so.* ${OUTDIR}/rootfs/lib64
-cp ${SYSROOT}/lib64/libc.so.* ${OUTDIR}/rootfs/lib64
+LIBS=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library" | awk '{print $5}' | sort | tr -d '[] ')
 
-#LIBS=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "Shared library" | awk '{print $5}' | sort | tr -d '[] ')
+for LIB in $LIBS 
+do
+  LIB_PATH=$(find "$SYSROOT" -name "$LIB")
+  echo "LIB_PATH: ${LIB_PATH}"
 
-#for LIB in $LIBS 
-#do
- # LIB_PATH=$(find "$SYSROOT" -name "$LIB")
-  #echo "LIB_PATH: ${LIB_PATH}"
+  if [ -n "$LIB_PATH" ]
+  then
+    echo "Copying $LIB_PATH to ${OUTDIR}/rootfs/lib64"
+    cp "$LIB_PATH" "${OUTDIR}/rootfs/lib64/"
+  else
+    echo "Library $LIB not found"
+  fi
+done
 
-  #if [ -n "$LIB_PATH" ]
-  #then
-    #echo "Copying $LIB_PATH to ${OUTDIR}/rootfs/lib64"
-   # cp "$LIB_PATH" "${OUTDIR}/rootfs/lib64/"
-  #else
-   # echo "Library $LIB not found"
-  #fi
-#done
+INTERPR=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "program interpreter" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '[] ')
+INTERPR=$(echo "$INTERPR" | sed 's|^/lib/||')
+INTER_PATH=$(find "$SYSROOT" -name "$INTERPR")
 
-#INTERPR=$(${CROSS_COMPILE}readelf -a "${OUTDIR}/rootfs/bin/busybox" | grep "program interpreter" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '[] ')
-#INTERPR=$(echo "$INTERPR" | sed 's|^/lib/||')
-#INTER_PATH=$(find "$SYSROOT" -name "$INTERPR")
-
-#if [ -n "$INTER_PATH" ]
-#then
-  #echo "Copying $INTER_PATH to ${OUTDIR}/rootfs/lib"
- # cp "$INTER_PATH" "${OUTDIR}/rootfs/lib/"
-#else
- # echo "Interpreter $INTERPR not found"
-#fi
-
-
-
+if [ -n "$INTER_PATH" ]
+then
+  echo "Copying $INTER_PATH to ${OUTDIR}/rootfs/lib"
+  cp "$INTER_PATH" "${OUTDIR}/rootfs/lib/"
+else
+  echo "Interpreter $INTERPR not found"
+fi
 
 # TODO: Make device nodes
 
@@ -165,13 +159,12 @@ cd ${OUTDIR}
 MAIN_GIT=$(cd $(dirname $FINDER_APP_DIR) && pwd)
 
 echo "Copy the finder related scripts to the home directory"
-mv $FINDER_APP_DIR/writer "$OUTDIR/rootfs/home"
+cp $FINDER_APP_DIR/writer "$OUTDIR/rootfs/home"
 cp $FINDER_APP_DIR/finder-test.sh "$OUTDIR/rootfs/home"
 cp $FINDER_APP_DIR/finder.sh "$OUTDIR/rootfs/home"
 cp "$FINDER_APP_DIR/autorun-qemu.sh" "$OUTDIR/rootfs/home"
-cp "$MAIN_GIT/conf/username.txt" "$OUTDIR/rootfs/home"
-cp "$MAIN_GIT/conf/assignment.txt" "$OUTDIR/rootfs/home" 
-
+cp "$MAIN_GIT/conf/username.txt" "$OUTDIR/rootfs/home/conf"
+cp "$MAIN_GIT/conf/assignment.txt" "$OUTDIR/rootfs/home/conf" 
 
 # TODO: Chown the root directory
 cd $OUTDIR/rootfs
@@ -182,4 +175,3 @@ echo "Creating intiframfs"
 find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
 cd ${OUTDIR}
 gzip -f initramfs.cpio
-echo "Pack"
