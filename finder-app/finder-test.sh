@@ -61,7 +61,11 @@ OUTPUTSTRING=$(finder.sh "$WRITEDIR" "$WRITESTR")
 
 OUTPUTRESULTAS4=/tmp/assignment4-result.txt
 
-echo "$OUTPUTSTRING" > $OUTPUTRESULTAS4
+if echo "$OUTPUTSTRING" > "$OUTPUTRESULTAS4"; then
+    echo "Command writing to /tmp/assignment4-result.txt executed successfully."
+else
+    echo "Command writing to /tmp/assignment4-result.txt failed."
+fi
 
 # remove temporary directories
 rm -rf /tmp/aeld-data
